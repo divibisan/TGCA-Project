@@ -53,21 +53,27 @@ def main():
                   'cases.diagnoses.days_to_death,'
                   'cases.diagnoses.vital_status,'
                   'cases.samples.sample_type,'
-                  'cases.demographic.gender'}
+                  'cases.demographic.gender,'
+                  'file_name'}
 
     response = requests.post(files_endpt, data=params)
 
-    files = get_values(response, "id", ["cases.case_id",
-                                        "cases.diagnoses.days_to_death",
-                                        "cases.diagnoses.vital_status",
-                                        "cases.samples.sample_type",
-                                        "cases.demographic.gender"])
+    file_ids = get_values(response, "id")
 
-    request_output_file = {
-        "ids": list(files.keys())
-    }
+    files = get_values(response, "file_name",
+                       ["cases.case_id",
+                        "cases.diagnoses.days_to_death",
+                        "cases.diagnoses.vital_status",
+                        "cases.samples.sample_type",
+                        "cases.demographic.gender"])
 
-    json.dump(request_output_file, sys.stdout)
+    #########################################################
+    # Output list of file IDs in JSON to STDOUT to download #
+
+    json.dump({"ids": file_ids}, sys.stdout)
+
+    with open("files.txt", "w") as file:
+        json.dump(files, file)
 
 
 def op_equals(field, value):
@@ -88,7 +94,7 @@ def op_in(field, value):
     return out
 
 
-def get_values(rsp, key, fields):
+def get_values(rsp, key, fields=[]):
     out = {}
     for hit in json.loads(rsp.content)["data"]["hits"]:
         hit_id = hit
@@ -100,7 +106,10 @@ def get_values(rsp, key, fields):
             for f in field.split("."):
                 hit_working = strip_list(hit_working)[f]
             out[hit_id][f] = hit_working
-    return out
+    if fields:
+        return out
+    else:
+        return list(out.keys())
 
 
 def strip_list(lst):
