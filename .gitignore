@@ -6,3 +6,6 @@
 *.gz
 *.DS_Store
 *.txt
+*.counts
+*.csv
+test.sh

@@ -2,7 +2,7 @@
 cwd=$(pwd)
 echo $cwd
 
-python3 ./NCI_getfiles.py |
+python3 ./NCI_getfiles.py "Lung Squamous Cell Carcinoma"|
 curl --remote-name --remote-header-name --request POST --header 'Content-Type: application/json' --data @- 'https://api.gdc.cancer.gov/data'
 
 # Get the newest file
@@ -20,4 +20,6 @@ for f in $(find ./files -name '*.gz')
 do
     gzip -d $f
     mv -f ${f%%.gz} ./files/unzip
+    parentdir=$(dirname "$f")
+    rm -r $parentdir
 done
