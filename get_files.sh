@@ -3,21 +3,24 @@ cwd=$(pwd)
 echo $cwd
 
 # Array holding diseases to download files for
+# First word is the tissue type, all following words are the disease name
+#  EX: "Blood,Acute Myeloid Leukemia" will download files for "Acute Myeloid Leukemia"
+#        and extract them to /files/Blood
+
 diseases=( 
-"Skin Cutaneous Melanoma" 
-"Breast Invasive Carcinoma" 
-"Acute Myeloid Leukemia" 
-"Cervical Squamous Cell Carcinoma and Endocervical Adenocarcinoma" 
-"Uterine Corpus Endometrial Carcinoma" )
+"Skin,Skin Cutaneous Melanoma" 
+"Breast,Breast Invasive Carcinoma" 
+"Blood,Acute Myeloid Leukemia" 
+"Cervix,Cervical Squamous Cell Carcinoma and Endocervical Adenocarcinoma" 
+"Uterus,Uterine Corpus Endometrial Carcinoma" )
 
 # Loop through disease array
-for disease_name in "${diseases[@]}"
+for disease in "${diseases[@]}"
 do
-    echo $disease_name
-    # Get first word of full disease name to name disease specific directory
-    set $disease_name
-    tissue_name=$1
+    # Split disease on comma, store first word as tissue_name, the rest as disease_name
+    IFS=',' read -r tissue_name disease_name  <<< "$disease"
     echo $tissue_name
+    echo $disease_name
     
     # Run python script to get file_ids, pass to curl to download *.tar.gz containing files
     python3 ./NCI_getfiles.py "$disease_name" | 
@@ -29,7 +32,7 @@ do
     # Get the manifest file (the newest .csv file)
     manifestfile=./file_manifest.csv
     
-    # Make directory for expanded files
+    # Make directories for expanded files
     mkdir files
     mkdir files/$tissue_name
 
@@ -38,6 +41,7 @@ do
     
     # Expand downloaded file
     tar -xf $tarfile -C ./files
+    # Delete tar file
     rm $tarfile
     
     # Loop through all .gz files contained in .tar file
