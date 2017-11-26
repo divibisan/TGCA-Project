@@ -9,3 +9,4 @@
 *.counts
 *.csv
 test.sh
+test.py
