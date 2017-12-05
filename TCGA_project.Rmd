@@ -14,9 +14,10 @@ require(rpart)
 require(MASS)
 require(car)
 require(tibble)
+require(edgeR)
 ```
 
-```{r multimerge function}
+```{r}
 multmerge = function(mypath){
   # Get files from directory and load as list
   filenames = list.files(path = mypath,
@@ -29,10 +30,18 @@ multmerge = function(mypath){
                                            colClasses = c("character", "numeric"))})
   # Create dataframe from first file
   merged.list <- datalist[[1]]
-  # Loop through all files, FULL JOIN with the dataframe on the gene variable
+  gene.vector <- merged.list[,1]
+  
+  # Check that the order of the genes in each file is identical.
+  # If so, just attach with cbind. If not, use full_join
   for (item in datalist[-1]) {
-    merged.list <- full_join(merged.list, item, by = "V1")
+    if (all(item[,1] == gene.vector)) {
+      merged.list <- cbind(merged.list, item[,2])
+    } else {
+      merged.list <- full_join(merged.list, item, by = "V1")
+    }
   }
+
   rownames(merged.list) <- merged.list[,1]
   merged.list <- merged.list[,-1]
   # Set filenames (stripped of extension) as column names
@@ -40,20 +49,24 @@ multmerge = function(mypath){
                                            "(.*/)|.FPKM.txt|.htseq.counts", "")
   return(merged.list)
 }
+
 ```
+
+
+
 
 ```{r load data and metadata}
 # Array of diseases to load
 diseases <- list.dirs(path = "files", full.names = F)[-1]
 
-disease.type <- vector()
-rm(exp.data)
+# Load data and metadata for those diseases
 for (x in diseases) {
+  print(x)
   # Generate folder name
   dirname <- paste("files/", x, sep = "")
   # Merge text files into a data frame
   temp.frame <- multmerge(dirname)
-  
+  print("Loaded")
   # Load metadata
   temp.meta <- read.csv(paste(dirname, "/file_manifest.csv", sep = ""), header = T,
                               colClasses = c("character","character",
@@ -74,113 +87,76 @@ for (x in diseases) {
   # Add disease type factor to metadata
   temp.meta <- cbind(temp.meta,rep_len(x, ncol(temp.frame)))
   
-  # Add metadata to meta.data
-  if (!exists("meta.data")) { meta.data <- temp.meta
-  } else {meta.data <- rbind(meta.data, temp.meta)}
+  # Add metadata to sample.meta
+  if (!exists("sample.meta")) { sample.meta <- temp.meta
+  } else {sample.meta <- rbind(sample.meta, temp.meta)}
+  print("Done")
 }
 
-colnames(meta.data) <- c("file", "case.id","days.to.death",
+# Set column names for metadata
+colnames(sample.meta) <- c("file", "case.id","days.to.death",
                          "dead","sample.type","gender","tissue")
-meta.data$gender <- factor(meta.data$gender)
-str(meta.data)
-table(meta.data$tissue)
+sample.meta$gender <- factor(sample.meta$gender)
+
+# Remove temporary objects
+rm(temp.frame, temp.meta, dirname, diseases, rowname, x)
+
+# Convery gene names from column to rownames so samples line up with meta data
+rownames(exp.data) <- exp.data$rowname
+exp.data <- exp.data[,-1]
 ```
 
-
+Simplify sample names and load gene meta data
 
 ```{r}
-t.lung.scc <- data.frame(t(lung.scc))
+# Abbreviate sample IDs
+colnames(exp.data) <- substr(colnames(exp.data), 1,8)
 
-t.lung.scc2 <- cbind(lung.scc.meta[,3], t.lung.scc)
-colnames(t.lung.scc2)[1] <- "days.to.death"
-#linear.model <- lm(days.to.death ~ ., data = t.lung.scc2)
+# Load gene information from Ensembl (data downloaded externally to .csv file)
+gene.meta <- left_join(data.frame(rownames(exp.data)),
+                       read.csv("ensembl_geneids.csv", stringsAsFactors = F),
+                       by = c("rownames.exp.data." = "Gene.stable.ID.version"))
 
-# Order variables by highest highest variance
-t.lung.scc3 <- t.lung.scc2[, c(1,order(apply(t.lung.scc2[,-1], 2, var), decreasing = TRUE))]
-
-bins <- cut(t.lung.scc3[,1], 5, include.lowest = TRUE)
-
-
-t.lung.scc3.cut150 <- cbind(bins, t.lung.scc3[,2:5000])
-# Generate Training and Testing datasets 
-train <- t.lung.scc3.cut150[1:180, ]
-test  <- t.lung.scc3.cut150[181:247,]
-
-
-
-class = data.frame(bins)
-as.factor(class[,1])
-
-## ----chunk7--------------------------------------------------
-data = data.frame(t(t.lung.scc3[which(!is.na(class)),2:501]))
-class = data.frame(class[which(!is.na(class)),])
-dim(data)
-## ----chunk8--------------------------------------------------
-nTest = ceiling(ncol(data)*0.2)  
-set.seed(12345) 
-ind = sample(ncol(data), nTest, FALSE)
-
-## ----chunk9--------------------------------------------------
-data.train = data[,-ind]  
-data.train = as.matrix(data.train + 1)
-classtr = data.frame(condition = class[-ind,])
-
-## ----chunk10-------------------------------------------------
-data.test = data[,ind]
-data.test = as.matrix(data.test + 1)
-classts = data.frame(condition = class[ind,])
-
-## ----chunk11-------------------------------------------------
-dim(data.train)
-dim(data.test)
-dim(classtr)
-str(data.train)
-sum(sapply(data.train, function(x) sum(is.na(x))))
-
-## ----chunk12, message=FALSE----------------------------------
-data.trainS4 = DESeqDataSetFromMatrix(countData = data.train,
-                                      colData = classtr, formula(~condition))
-data.trainS4 = DESeq(data.trainS4, fitType="local")
-data.trainS4
-
-## ----chunk13, message=FALSE----------------------------------
-data.testS4 = DESeqDataSetFromMatrix(countData = data.test,
-                                     colData = classts, formula(~condition))
-data.testS4 = DESeq(data.testS4, fitType = "local") 
-data.testS4
-
-rf = classify(data = data.trainS4, method = "randomforest", normalize = "deseq", 
-              deseqTransform = "vst", cv = 5, rpt = 3)
-rf
-
-x = predictClassify(rf, data.trainS4)
-table(x, classts)
-###########
-#RPART
-dec.tree <- rpart(bins ~., data = train)
-
-summary(dec.tree)
-dec.tree
-
-
-table(predict(dec.tree, type = "class", newdata = test[,-1]), test[,1])
-#######
-# MLSeq
-
-de_data <- DESeqDataSetFromMatrix(train)
-
-mlseq <- classify(train, method = "randomforest")
-
-
-############
-####LDA
-
-lda <- lda(days.to.death ~ ., data = train)
-# Predict categories based on LDA model
-#  remove tumor column for preiction
-predict <- predict(lda, newdata = test)
-# Get number of correct predictions
-agreement <- predict$class == test$day.to.death
-# Store proportion correct guesses in vector
-results[n] <- sum(agreement)/nrow(expr.test)
+colnames(gene.meta) <- c("ensembl.id", "description", "name", "type")
 ```
+
+
+
+```{r fix metadata structure}
+str(sample.meta)
+
+# Due to missing data, some samples had sample.type improperly filed under dead
+x <- which(!sample.meta$dead %in% c("dead","alive") )
+sample.meta[x, "sample.type"] <- sample.meta[x, "dead"]
+sample.meta[x, "dead"] <- NA
+sample.meta$dead <- droplevels(sample.meta$dead)
+
+
+# Some samples have "" instead of NA for gender. FIX
+sample.meta[which(sample.meta$gender == ""), "gender"] <- NA
+sample.meta$gender <- droplevels(sample.meta$gender)
+
+# 2 samples have a rare sample.type value
+# remove them from exp.data and sample.meta
+x <- which(sample.meta$sample.type %in% c("Additional Metastatic","Recurrent Tumor") )
+exp.data <- exp.data[,-x]
+sample.meta <- sample.meta[-x,]
+sample.meta$sample.type <- droplevels(sample.meta$sample.type)
+rm(x)
+
+table(sample.meta$dead)
+table(sample.meta$sample.type)
+table(sample.meta$gender)
+table(sample.meta$tissue)
+table(sample.meta$tissue, sample.meta$sample.type)
+str(sample.meta)
+```
+
+Confirm that the order of meta.data matches expression data
+
+```{r}
+# Both should equal 0 if the order is the same
+sum((rownames(exp.data) == gene.meta$ensembl.id) == FALSE)
+sum((colnames(exp.data) == substr(colnames(sample.meta$file), 1,8)) == FALSE)
+```
+

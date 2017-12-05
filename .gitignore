@@ -8,6 +8,7 @@
 *.txt
 *.counts
 *.csv
+!ensembl_geneids.csv
 test.sh
 test.py
 *.RData
