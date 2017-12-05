@@ -30,8 +30,7 @@ def main():
 
     case_count = 2000
     filters = op_and([op_equals("project.name", disease_name),
-                      op_equals("project.program.name", program_name),
-                      op_equals("diagnoses.vital_status", "dead")
+                      op_equals("project.program.name", program_name)
                       ])
     params = {
         'filters': json.dumps(filters),
@@ -49,16 +48,13 @@ def main():
 
     response = requests.get(cases_endpt, params=params)
 
-    cases = get_values(response, "id", ["diagnoses.vital_status",
-                                        "diagnoses.days_to_death",
-                                        "sample_ids",
-                                        "case_id"])
+    cases = get_values(response, "id")
 
     #############################################
     # GET GENE EXPRESSION FILES FOR THOSE CASES #
     filters = op_and([op_equals("data_category", "Transcriptome Profiling"),
                       op_equals("analysis.workflow_type", "HTSeq - Counts"),
-                      op_in("cases.case_id", list(cases.keys()))
+                      op_in("cases.case_id", cases)
                       ])
     params = {
         'filters': json.dumps(filters),
@@ -137,10 +133,13 @@ def get_values(rsp, key, fields=[]):
             hit_id = hit_id[k]
         out[hit_id] = {}
         for field in fields:
-            hit_working = hit
-            for f in field.split("."):
-                hit_working = strip_list(hit_working)[f]
-            out[hit_id][f] = hit_working
+            try:
+                hit_working = hit
+                for f in field.split("."):
+                    hit_working = strip_list(hit_working)[f]
+                out[hit_id][f] = hit_working
+            except KeyError:
+                out[hit_id][f] = "NA"
     if fields:
         return out
     else:
